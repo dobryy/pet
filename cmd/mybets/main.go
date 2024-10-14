@@ -53,7 +53,7 @@ func main() {
 			select {
 			case <-ticker.C:
 				info, _ := jsConsumer.Info(ctx)
-				l.Info().Msgf("Pending consumer messages: %d", info.NumWaiting)
+				l.Info().Msgf("Pending consumer messages: %d", info.NumPending)
 			}
 		}
 	}()

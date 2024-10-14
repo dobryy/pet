@@ -10,7 +10,7 @@ import (
 	"github.com/rs/zerolog"
 )
 
-const WORKERS_NUMBER = 10000
+const WORKERS_NUMBER = 100
 
 type Betting struct {
 	jetstream jetstream.JetStream
