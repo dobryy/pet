@@ -1,0 +1,97 @@
+services:
+  betting:
+    build:
+      dockerfile: ./build/betting/Dockerfile
+      context: .
+      target: development
+    volumes:
+      - ./:/go/src/betting:cached
+    ports:
+      - 8080:8080
+    depends_on:
+      - prometheus
+      - grafana
+      - nats1
+      - nats2
+      - nats3
+    deploy:
+      restart_policy:
+        condition: on-failure
+
+  mybets:
+    build:
+      dockerfile: build/mybets/Dockerfile
+      context: .
+      target: development
+    volumes:
+      - ./:/go/src/mybets:cached
+    depends_on:
+      - nats1
+      - nats2
+      - nats3
+    deploy:
+      restart_policy:
+        condition: on-failure
+#      mode: replicated
+#      replicas: 10
+
+  nats1:
+    image: nats:2.10.21-alpine3.20
+    ports:
+      - "4222:4222"
+      - "8222:8222"
+    command: "--config /etc/nats/nats-server.conf --name nats1 --cluster_name NATS --cluster nats://0.0.0.0:6222 --routes nats://nats2:6222,nats://nats3:6222 --http_port 8222"
+    volumes:
+      - /data
+      - ./.nats/nats-server.conf:/etc/nats/nats-server.conf
+    deploy:
+      restart_policy:
+        condition: on-failure
+
+  nats2:
+    image: nats:2.10.21-alpine3.20
+    command: "--config /etc/nats/nats-server.conf --name nats2 --cluster_name NATS --cluster nats://0.0.0.0:6222 --routes nats://nats1:6222,nats://nats3:6222 --http_port 8222"
+    volumes:
+      - /data
+      - ./.nats/nats-server.conf:/etc/nats/nats-server.conf
+    deploy:
+      restart_policy:
+        condition: on-failure
+
+  nats3:
+    image: nats:2.10.21-alpine3.20
+    command: "--config /etc/nats/nats-server.conf --name nats3 --cluster_name NATS --cluster nats://0.0.0.0:6222 --routes nats://nats1:6222,nats://nats2:6222 --http_port 8222"
+    volumes:
+      - /data
+      - ./.nats/nats-server.conf:/etc/nats/nats-server.conf
+    deploy:
+      restart_policy:
+        condition: on-failure
+
+  prometheus:
+    image: prom/prometheus
+    volumes:
+      - ./.docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./.docker/prometheus/data:/prometheus
+    user: root
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+    ports:
+      - 9090:9090
+
+  grafana:
+    image: grafana/grafana
+    volumes:
+      - ./.docker/grafana/data:/var/lib/grafana
+      - ./.docker/grafana/certs:/certs
+    user: root
+    ports:
+      - 3000:3000
+
+  prometheus-nats-exporter:
+    image: natsio/prometheus-nats-exporter:latest
+    ports:
+      - 7777:7777
+    command: "-jsz all -varz http://nats1:8222"
+    depends_on:
+      - nats1
