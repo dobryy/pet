@@ -47,7 +47,10 @@ services:
     deploy:
       restart_policy:
         condition: on-failure
-
+#      resources:
+#        limits:
+#          cpus: "2"
+#          memory: 128M
   nats2:
     image: nats:2.10.21-alpine3.20
     command: "--config /etc/nats/nats-server.conf --name nats2 --cluster_name NATS --cluster nats://0.0.0.0:6222 --routes nats://nats1:6222,nats://nats3:6222 --http_port 8222"
@@ -57,6 +60,10 @@ services:
     deploy:
       restart_policy:
         condition: on-failure
+#      resources:
+#        limits:
+#          cpus: "2"
+#          memory: 128M
 
   nats3:
     image: nats:2.10.21-alpine3.20
@@ -67,6 +74,10 @@ services:
     deploy:
       restart_policy:
         condition: on-failure
+#      resources:
+#        limits:
+#          cpus: "2"
+#          memory: 128M
 
   prometheus:
     image: prom/prometheus

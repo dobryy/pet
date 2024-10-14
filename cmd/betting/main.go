@@ -9,20 +9,19 @@ import (
 	"syscall"
 	"time"
 
+	"pet/internal/betting"
+	"pet/pkg/http"
+
 	natspkg "github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 	prometheuspkg "github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/zerolog"
-	"pet/internal/betting"
-	"pet/pkg/http"
-	"pet/pkg/prometheus"
 )
 
 var wg sync.WaitGroup
 
 const testTicketsCount = 1_000
-const betsChannelSize = 1_000_000
 
 func main() {
 	gracefulShutdown := make(chan os.Signal, 1)
@@ -34,7 +33,7 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	// Prometheus
-	prometheuspkg.MustRegister(prometheus.Collectors...)
+	prometheuspkg.MustRegister(betting.Collectors...)
 	prometheusHandler := promhttp.Handler()
 	server := http.Init(l, prometheusHandler)
 
@@ -43,24 +42,23 @@ func main() {
 
 	b := betting.New(js, l)
 
-	betsCh := make(chan *betting.Ticket, betsChannelSize)
+	betsCh := make(chan *betting.Ticket, 100)
+	resultsCh := make(chan *betting.Result, 100)
 
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		b.Run(ctx, betsCh)
+		b.Run(ctx, betsCh, resultsCh)
 	}()
 
-	l.Info().Msg("Running...")
-
 	wg.Add(1)
 	go func() {
-		perf(ctx, betsCh, l)
 		defer wg.Done()
+		perf(ctx, betsCh, resultsCh, l)
 	}()
 
 	<-gracefulShutdown
-	l.Info().Msg("Shutting down gracefully")
+	l.Info().Msg("Shutting down gracefully...")
 	if err := server.Shutdown(ctx); err != nil {
 		l.Err(err).Send()
 	}
@@ -68,32 +66,55 @@ func main() {
 	wg.Wait()
 }
 
-func perf(ctx context.Context, betsCh chan *betting.Ticket, l *zerolog.Logger) {
+func perf(ctx context.Context, betsCh chan *betting.Ticket, resultsCh chan *betting.Result, l *zerolog.Logger) {
 	// let everything start
-	time.Sleep(60 * time.Second)
-	l.Info().Msg("Sending tickets to the channel")
-	var k int
-	for k < testTicketsCount {
-		select {
-		case <-ctx.Done():
-			return
-		default:
-			break
-		}
+	time.Sleep(10 * time.Second)
+	go func() {
+		l.Info().Msg("Sending tickets to the channel")
+		var k int
+		for k < testTicketsCount {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+				break
+			}
 
-		k += 1
-		betsCh <- &betting.Ticket{
-			ClientId:     rand.Intn(testTicketsCount / 100),
-			TicketNumber: 1000000000 + k,
-			Amount:       0,
-			Odds: &betting.Odds{
-				Id:    0,
-				Value: 0,
-			},
+			k += 1
+			betsCh <- &betting.Ticket{
+				ClientId:     rand.Intn(testTicketsCount / 100),
+				TicketNumber: 1000000000 + k,
+				Amount:       0,
+				Odds: &betting.Odds{
+					Id:    0,
+					Value: 0,
+				},
+				PerfStartTime: time.Now(),
+			}
 		}
-		//l.Debug().Msgf("%d", k)
-	}
-	l.Info().Msg("All tickets have been sent to channel")
+		l.Info().Msg("All tickets have been sent to channel")
+	}()
+
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case result := <-resultsCh:
+				err := result.Result()
+				if err != nil {
+					l.Error().Err(err).Msgf("Failed to confirm bet: %d", result.Ticket.TicketNumber)
+					break
+				}
+
+				betting.BettingPublishAckDuration.Observe(time.Since(result.Ticket.Time).Seconds())
+				betting.BettingBetDuration.Observe(time.Since(result.Ticket.PerfStartTime).Seconds())
+				l.Debug().Msgf("Bet published successfully: %d", result.Ticket.TicketNumber)
+				l.Debug().Msgf("Bet acked successfully: %d", time.Since(result.Ticket.Time).Milliseconds())
+				break
+			}
+		}
+	}()
 
 	go func() {
 		for {

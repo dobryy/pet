@@ -5,9 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"pet/internal/mybets/consumer"
+
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/rs/zerolog"
-	"pet/internal/mybets/consumer"
 )
 
 type MyBets struct {

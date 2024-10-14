@@ -8,15 +8,15 @@ import (
 	"syscall"
 	"time"
 
+	"pet/internal/mybets"
+	"pet/internal/mybets/consumer"
+	"pet/pkg/http"
+
 	natspkg "github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 	prometheuspkg "github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/zerolog"
-	"pet/internal/mybets"
-	"pet/internal/mybets/consumer"
-	"pet/pkg/http"
-	"pet/pkg/prometheus"
 )
 
 var wg sync.WaitGroup
@@ -30,7 +30,7 @@ func main() {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	// Prometheus
-	prometheuspkg.MustRegister(prometheus.Collectors...)
+	prometheuspkg.MustRegister(mybets.Collectors...)
 	prometheusHandler := promhttp.Handler()
 	server := http.Init(l, prometheusHandler)
 
@@ -53,7 +53,7 @@ func main() {
 			select {
 			case <-ticker.C:
 				info, _ := jsConsumer.Info(ctx)
-				l.Info().Msgf("Pending consumer messages: %d", info.NumPending)
+				l.Info().Msgf("Pending consumer messages: %d", info.NumWaiting)
 			}
 		}
 	}()
